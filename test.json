@@ -2,19 +2,22 @@
     "children": [
         {
             "id": "1",
-            "content": "hello\nworld"
+            "content": "hello\nworld",
+            "children": []
         },
         {
             "children": [
                 {
                     "id": "3",
-                    "content": "test"
+                    "content": "test",
+                    "children": []
                 }
             ]
         },
         {
             "subject": "Todo queue",
-            "content": "\\----- Test"
+            "content": "\\----- Test",
+            "children": []
         }
     ]
 }

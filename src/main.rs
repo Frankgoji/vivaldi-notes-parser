@@ -105,7 +105,11 @@ fn traverse_json(
     contains: &Option<String>,
     json: &Value
 ) -> Option<String> {
-    match (&json["children"], &json[key], &json["content"], val, contains) {
+    let children = match &json["children"] {
+        Value::Array(children) if !children.is_empty() => &json["children"],
+        _ => &Value::Null,
+    };
+    match (children, &json[key], &json["content"], val, contains) {
         (Value::Null, Value::String(k), Value::String(content), Some(v), None) if k == v => {
             Some(String::from(content))
         },
