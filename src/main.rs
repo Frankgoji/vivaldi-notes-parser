@@ -135,18 +135,20 @@ fn main() -> Result<(), Box<dyn Error>> {
         usage();
     }
 
-    if let Args::Key {key, val, input, contains} = args {
-        let notes_json = if let Input::File(file) = input {
-            fs::read_to_string(file)?
-        } else {
-            io::stdin().lock().lines()
-                .map(|r| r.unwrap_or(String::new()))
-                .collect::<String>()
-        };
-        let notes_json: Value = serde_json::from_str(&notes_json)?;
-        if let Some(content) = traverse_json(&key, &val, &contains, &notes_json) {
-            println!("{}", content);
-        }
+    let Args::Key {key, val, input, contains} = args else {
+        panic!("Failed to retrieve arguments");
+    };
+
+    let notes_json = if let Input::File(file) = input {
+        fs::read_to_string(file)?
+    } else {
+        io::stdin().lock().lines()
+            .map(|r| r.unwrap_or(String::new()))
+            .collect::<String>()
+    };
+    let notes_json: Value = serde_json::from_str(&notes_json)?;
+    if let Some(content) = traverse_json(&key, &val, &contains, &notes_json) {
+        println!("{}", content);
     }
 
     Ok(())
