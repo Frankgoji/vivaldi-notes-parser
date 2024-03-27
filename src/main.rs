@@ -5,7 +5,7 @@ use std::env;
 use std::error::Error;
 use std::fs;
 use std::io::{self, BufRead};
-use serde_json::{self, Value};
+use serde_json::{self, json, Value};
 
 fn usage() {
     println!("Usage of vivaldi_notes_parser:");
@@ -16,6 +16,8 @@ fn usage() {
     println!("\t--value/-v value\tSelect the note with this chosen key and this value, e.g.: -k id -v 456");
     println!("\t--contains/-c contents\tSelect the note with this chosen key and contains the given contents, e.g.: -k contents -c \"Some content\"");
     println!();
+    println!("\tIf no options are selected, the parser will print a summary by traversing the notes tree with these fields: {{id, subject, content[:20], children}}");
+    println!();
     println!("Examples:");
     println!("\tvivaldi_notes_parser -k id -v 456 Notes");
     println!("\tcat 2022.01.07_21.00.01_Notes.bak | vivaldi_notes_parser -k subject -v \"Todo Queue\"");
@@ -24,8 +26,7 @@ fn usage() {
 enum Args {
     Help,
     Key {
-        key: String,
-        //val: String,
+        key: Option<String>,
         val: Option<String>,
         contains: Option<String>,
         input: Input,
@@ -42,7 +43,7 @@ enum Input {
 fn parse_args<I>(args: I) -> Args
     where I: Iterator<Item = String>
 {
-    let mut key = String::new();
+    let mut key: Option<String> = None;
     let mut val: Option<String> = None;
     let mut contains: Option<String> = None;
     let mut input: Input = Input::Stdin;
@@ -61,7 +62,7 @@ fn parse_args<I>(args: I) -> Args
             },
             (_, "-k") | (_, "--key") => {
                 if let Some((_, next_word)) = args_iter.next() {
-                    key = String::from(next_word);
+                    key = Some(String::from(next_word));
                 } else {
                     return Args::Help;
                 }
@@ -91,10 +92,11 @@ fn parse_args<I>(args: I) -> Args
     if let (Some(_v), Some(_c)) = (&val, &contains) {
         return Args::Help;
     }
-    if key.is_empty() {
-        return Args::Help;
+    // handle case where key is empty but not others
+    match (&key, val.is_some() || contains.is_some()) {
+        (None, true) => Args::Help,
+        _ => Args::Key { key, val, contains, input },
     }
-    Args::Key { key, val, contains, input }
 }
 
 /// Traverse the notes json representation and retrieve the contents of the
@@ -129,6 +131,37 @@ fn traverse_json(
     }
 }
 
+/// Create a summary traversal of the notes json, printing these fields:
+/// {id, subject, content[:20], children}
+fn summary_traversal(json: &Value) -> Option<String> {
+    serde_json::to_string_pretty(&summary_traversal_helper(json)).ok()
+}
+fn summary_traversal_helper(json: &Value) -> Value {
+    let mut res: Value = json!({});
+
+    if let Value::String(id) = &json["id"] {
+        res["id"] = Value::String(id.to_string());
+    }
+    if let Value::String(subject) = &json["subject"] {
+        res["subject"] = Value::String(subject[..std::cmp::min(30, subject.len())].to_string());
+    }
+    if let Value::String(content) = &json["content"] {
+        res["content"] = Value::String(content[..std::cmp::min(30, content.len())].to_string());
+    }
+
+    match &json["children"] {
+        Value::Array(children) if !children.is_empty() => {
+            let mut parsed_children: Vec<Value> = Vec::new();
+            for child in children {
+                parsed_children.push(summary_traversal_helper(child));
+            }
+            res["children"] = Value::Array(parsed_children);
+        },
+        _ => {},
+    };
+    res
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let args = parse_args(env::args());
     if let Args::Help = args {
@@ -147,8 +180,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             .collect::<String>()
     };
     let notes_json: Value = serde_json::from_str(&notes_json)?;
-    if let Some(content) = traverse_json(&key, &val, &contains, &notes_json) {
-        println!("{}", content);
+
+    let content = match key {
+        Some(key) => traverse_json(&key, &val, &contains, &notes_json),
+        _ => summary_traversal(&notes_json),
+    };
+    if let Some(content) = content {
+        println!("{content}");
     }
 
     Ok(())
@@ -162,6 +200,14 @@ mod tests {
     fn get_string_iter<'a>(v: &'a Vec<&'a str>) -> Box<dyn Iterator<Item = String> + 'a>
     {
         Box::new(v.iter().map(|&i| String::from(i)))
+    }
+
+    #[test]
+    fn test_index()
+    {
+        let s = "abcdefg";
+        let t = &s[..std::cmp::min(10, s.len())];
+        println!("{t}");
     }
 
     #[test]
@@ -245,7 +291,7 @@ mod tests {
         let key_args: Box<dyn Iterator<Item = String>> = get_string_iter(&key_vec);
         let key_args_parsed = parse_args(key_args);
         if let Args::Key {key, val, contains, input} = key_args_parsed {
-            assert_eq!(key, String::from("key"));
+            assert_eq!(key, Some(String::from("key")));
             assert_eq!(val, Some(String::from("value")));
             assert_eq!(contains, None);
             if let Input::Stdin = input {
@@ -262,7 +308,7 @@ mod tests {
         let key_args: Box<dyn Iterator<Item = String>> = get_string_iter(&key_vec);
         let key_args_parsed = parse_args(key_args);
         if let Args::Key {key, val, contains, input} = key_args_parsed {
-            assert_eq!(key, String::from("key"));
+            assert_eq!(key, Some(String::from("key")));
             assert_eq!(val, Some(String::from("value")));
             assert_eq!(contains, None);
             if let Input::File(file) = input {
@@ -279,7 +325,7 @@ mod tests {
         let key_args: Box<dyn Iterator<Item = String>> = get_string_iter(&key_vec);
         let key_args_parsed = parse_args(key_args);
         if let Args::Key {key, val, contains, input} = key_args_parsed {
-            assert_eq!(key, String::from("key"));
+            assert_eq!(key, Some(String::from("key")));
             assert_eq!(val, None);
             assert_eq!(contains, Some(String::from("contents")));
             if let Input::Stdin = input {
@@ -296,7 +342,7 @@ mod tests {
         let key_args: Box<dyn Iterator<Item = String>> = get_string_iter(&key_vec);
         let key_args_parsed = parse_args(key_args);
         if let Args::Key {key, val, contains, input} = key_args_parsed {
-            assert_eq!(key, String::from("key"));
+            assert_eq!(key, Some(String::from("key")));
             assert_eq!(val, None);
             assert_eq!(contains, Some(String::from("contents")));
             if let Input::File(file) = input {
