@@ -166,6 +166,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let args = parse_args(env::args());
     if let Args::Help = args {
         usage();
+        return Ok(());
     }
 
     let Args::Key {key, val, input, contains} = args else {
